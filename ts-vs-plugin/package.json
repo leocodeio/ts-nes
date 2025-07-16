@@ -1,0 +1,151 @@
+{
+  "name": "nes-vscode",
+  "displayName": "NES - Next Edit Suggestion",
+  "description": "AI-powered code suggestions using local Ollama models",
+  "version": "0.1.0",
+  "publisher": "nes-team",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other",
+    "Machine Learning",
+    "Snippets"
+  ],
+  "keywords": [
+    "ai",
+    "code-completion",
+    "ollama",
+    "next-edit-suggestion",
+    "code-assistant"
+  ],
+  "activationEvents": [
+    "onLanguage:typescript",
+    "onLanguage:javascript",
+    "onLanguage:python",
+    "onLanguage:java",
+    "onLanguage:cpp",
+    "onLanguage:go",
+    "onLanguage:rust"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "nes.getSuggestion",
+        "title": "Get AI Code Suggestion",
+        "category": "NES"
+      },
+      {
+        "command": "nes.applySuggestion",
+        "title": "Apply Suggestion",
+        "category": "NES"
+      },
+      {
+        "command": "nes.showSettings",
+        "title": "Open Settings",
+        "category": "NES"
+      },
+      {
+        "command": "nes.healthCheck",
+        "title": "Health Check",
+        "category": "NES"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "nes.getSuggestion",
+        "key": "ctrl+shift+n",
+        "mac": "cmd+shift+n",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "title": "NES Configuration",
+      "properties": {
+        "nes.ollama.baseUrl": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Base URL for Ollama API"
+        },
+        "nes.ollama.model": {
+          "type": "string",
+          "default": "qwen2.5-coder:1.5b",
+          "description": "Ollama model to use for code suggestions"
+        },
+        "nes.ollama.timeout": {
+          "type": "number",
+          "default": 30000,
+          "description": "Request timeout in milliseconds"
+        },
+        "nes.ollama.temperature": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Temperature for model generation (0-1)"
+        },
+        "nes.contextWindow": {
+          "type": "number",
+          "default": 20,
+          "description": "Context window size (lines before/after cursor)"
+        },
+        "nes.maxSuggestions": {
+          "type": "number",
+          "default": 5,
+          "description": "Maximum number of suggestions to generate"
+        },
+        "nes.debug": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable debug logging"
+        },
+        "nes.autoApply": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically apply the first suggestion"
+        }
+      }
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "nes.getSuggestion",
+          "group": "1_modification",
+          "when": "editorTextFocus"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "nes.getSuggestion",
+          "when": "editorTextFocus"
+        },
+        {
+          "command": "nes.applySuggestion"
+        },
+        {
+          "command": "nes.showSettings"
+        },
+        {
+          "command": "nes.healthCheck"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "diff": "^5.1.0",
+    "chalk": "^4.1.2"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.74.0",
+    "@types/node": "^20.0.0",
+    "@types/diff": "^5.0.0",
+    "typescript": "^5.0.0"
+  }
+}

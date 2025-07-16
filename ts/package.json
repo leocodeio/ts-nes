@@ -1,0 +1,45 @@
+{
+  "name": "nes-ts",
+  "version": "0.1.0",
+  "description": "Next Edit Suggestion system using Ollama AI",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "example": "node dist/examples/basic.js",
+    "example:file": "node dist/examples/file-processor.js",
+    "demo": "npm run build && node dist/examples/demo.js",
+    "process:calculator": "npm run build && node dist/examples/file-processor-cli.js sample-files/enhanced-calculator.ts output/enhanced-calculator-improved.ts",
+    "process:shapes": "npm run build && node dist/examples/file-processor-cli.js sample-files/enhanced-shapes.py output/enhanced-shapes-improved.py",
+    "start": "npm run demo"
+  },
+  "keywords": [
+    "ai",
+    "code-completion",
+    "next-edit-suggestion",
+    "ollama",
+    "typescript",
+    "code-assistant"
+  ],
+  "author": "Your Name",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "diff": "^5.1.0",
+    "chalk": "^4.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/jest": "^29.0.0",
+    "@types/diff": "^5.0.0",
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
