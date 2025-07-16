@@ -1,0 +1,344 @@
+"use strict";
+/**
+ * Context management for the NES (Next Edit Suggestion) system
+ *
+ * This module handles the creation and management of editing context,
+ * including file analysis, diff generation, and prompt construction.
+ */
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ContextManager = void 0;
+const fs = __importStar(require("fs"));
+const path = __importStar(require("path"));
+const diff_1 = require("diff");
+const types_1 = require("./types");
+/**
+ * Default system prompt for the AI model
+ * Guides the model to provide focused, contextual code suggestions
+ */
+const DEFAULT_SYSTEM_PROMPT = `
+Keep your answers short and impersonal.
+The programmer will provide you with a set of recently viewed files, their recent edits, and a snippet of code that is being actively edited.
+
+When helping the programmer, your goals are:
+- Make only the necessary changes as indicated by the context.
+- Avoid unnecessary rewrites and make only the necessary changes, using ellipses to indicate partial code where appropriate.
+- Ensure all specified additions, modifications, and new elements (e.g., methods, parameters, function calls) are included in the response.
+- Adhere strictly to the provided pattern, structure, and content, including matching the exact structure and formatting of the expected response.
+- Maintain the integrity of the existing code while making necessary updates.
+- Provide complete and detailed code snippets without omissions, ensuring all necessary parts such as additional classes, methods, or specific steps are included.
+- Keep the programmer on the pattern that you think they are on.
+- Consider what edits need to be made next, if any.
+
+When responding to the programmer, you must follow these rules:
+- Only answer with the updated code. The programmer will copy and paste your code as is in place of the programmer's provided snippet.
+- Match the expected response exactly, even if it includes errors or corruptions, to ensure consistency.
+- Do not alter method signatures, add or remove return values, or modify existing logic unless explicitly instructed.
+- The current cursor position is indicated by <|cursor|>. You MUST keep the cursor position the same in your response.
+- DO NOT REMOVE <|cursor|>.
+- You must ONLY reply using the tag: <next-version>.
+`.trim();
+/**
+ * Template for user prompts sent to the AI model
+ */
+const USER_PROMPT_TEMPLATE = `
+These are the files I'm working on, before I started making changes to them:
+<original_code>
+%s:
+%s
+</original_code>
+
+This is a sequence of edits that I made on these files, starting from the oldest to the newest:
+<edits_to_original_code>
+\`\`\`
+---%s:
++++%s:
+%s
+\`\`\`
+</edits_to_original_code>
+
+Here is the piece of code I am currently editing in %s:
+
+<current-version>
+\`\`\`%s
+%s
+\`\`\`
+</current-version>
+
+Based on my most recent edits, what will I do next? Rewrite the code between <current-version> and </current-version> based on
+what I will do next. Do not skip any lines. Do not be lazy.
+`.trim();
+/**
+ * Context manager for creating and maintaining edit contexts
+ */
+class ContextManager {
+    constructor(contextWindow = 20, systemPrompt) {
+        this.contextWindow = contextWindow;
+        this.systemPrompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
+    }
+    /**
+     * Create edit context from a file path and optional cursor position
+     */
+    async createContext(filePath, cursor, originalContent) {
+        // Validate file exists
+        if (!fs.existsSync(filePath)) {
+            throw new Error(`File not found: ${filePath}`);
+        }
+        // Read current file content
+        const currentContent = await fs.promises.readFile(filePath, "utf-8");
+        const currentLines = currentContent.split("\n");
+        // Get original content (either provided or same as current)
+        const originalLines = originalContent
+            ? originalContent.split("\n")
+            : currentLines;
+        // Determine file type from extension
+        const ext = path.extname(filePath).toLowerCase();
+        const filetype = types_1.LANGUAGE_EXTENSIONS[ext] || "text";
+        // Set default cursor position if not provided (middle of file)
+        const defaultCursor = cursor || [
+            Math.floor(currentLines.length / 2),
+            0,
+        ];
+        // Create current version context around cursor
+        const currentVersion = this.getCurrentVersion(currentLines, defaultCursor);
+        // Generate original code with line numbers
+        const originalCode = this.formatCodeWithLineNumbers(originalLines);
+        // Generate diff between original and current
+        const edits = this.generateDiff(originalLines.join("\n"), currentContent);
+        return {
+            filename: path.resolve(filePath),
+            filetype,
+            originalCode,
+            edits,
+            currentVersion,
+        };
+    }
+    /**
+     * Extract current version context around the cursor position
+     */
+    getCurrentVersion(lines, cursor) {
+        const [row, col] = cursor;
+        // Calculate context window boundaries
+        const startRow = Math.max(0, row - this.contextWindow);
+        const endRow = Math.min(lines.length - 1, row + this.contextWindow);
+        // Extract lines before cursor
+        const beforeCursor = lines.slice(startRow, row);
+        const currentLine = lines[row] || "";
+        const beforeCursorOnLine = currentLine.slice(0, col);
+        const afterCursorOnLine = currentLine.slice(col);
+        // Extract lines after cursor
+        const afterCursor = lines.slice(row + 1, endRow + 1);
+        // Combine with cursor marker
+        const beforeText = [...beforeCursor, beforeCursorOnLine].join("\n");
+        const afterText = [afterCursorOnLine, ...afterCursor].join("\n");
+        const text = `${beforeText}<|cursor|>${afterText}`;
+        return {
+            cursor,
+            startRow,
+            endRow,
+            text,
+            content: text.replace("<|cursor|>", ""), // Content without cursor marker
+        };
+    }
+    /**
+     * Format code with line numbers for better context
+     */
+    formatCodeWithLineNumbers(lines) {
+        return lines
+            .map((line, index) => `${(index + 1).toString().padStart(3, " ")}│${line}`)
+            .join("\n");
+    }
+    /**
+     * Generate unified diff between original and current content
+     */
+    generateDiff(original, current) {
+        const diff = (0, diff_1.diffLines)(original, current, {
+            ignoreWhitespace: false,
+            newlineIsToken: true,
+        });
+        const diffOutputLines = [];
+        for (const part of diff) {
+            const lines = part.value.split("\n");
+            if (part.added) {
+                lines.forEach((line) => {
+                    if (line.trim())
+                        diffOutputLines.push(`+${line}`);
+                });
+            }
+            else if (part.removed) {
+                lines.forEach((line) => {
+                    if (line.trim())
+                        diffOutputLines.push(`-${line}`);
+                });
+            }
+            else {
+                // Context lines (unchanged)
+                lines.forEach((line) => {
+                    if (line.trim())
+                        diffOutputLines.push(` ${line}`);
+                });
+            }
+        }
+        return diffOutputLines.join("\n");
+    }
+    /**
+     * Create chat payload for the AI model
+     */
+    createPayload(context, model = "qwen2.5-coder:1.5b") {
+        const userContent = this.formatUserPrompt(context);
+        const messages = [
+            {
+                role: "system",
+                content: this.systemPrompt,
+            },
+            {
+                role: "user",
+                content: userContent,
+            },
+        ];
+        return {
+            messages,
+            model,
+            temperature: 0,
+            top_p: 1,
+            stream: true,
+        };
+    }
+    /**
+     * Format the user prompt using the template
+     */
+    formatUserPrompt(context) {
+        // Use the more reliable createUserPrompt method
+        return this.createUserPrompt(context);
+    }
+    /**
+     * Create user prompt with proper string formatting
+     */
+    createUserPrompt(context) {
+        // Using simple string replacement for template
+        let prompt = USER_PROMPT_TEMPLATE;
+        const replacements = [
+            context.filename,
+            context.originalCode,
+            context.filename,
+            context.filename,
+            context.edits,
+            context.filename,
+            context.filetype,
+            context.currentVersion.text,
+        ];
+        // Replace %s placeholders in order
+        replacements.forEach((replacement) => {
+            prompt = prompt.replace("%s", replacement);
+        });
+        return prompt;
+    }
+    /**
+     * Update the system prompt
+     */
+    setSystemPrompt(prompt) {
+        this.systemPrompt = prompt;
+    }
+    /**
+     * Get the current system prompt
+     */
+    getSystemPrompt() {
+        return this.systemPrompt;
+    }
+    /**
+     * Update the context window size
+     */
+    setContextWindow(size) {
+        if (size < 1) {
+            throw new Error("Context window size must be at least 1");
+        }
+        this.contextWindow = size;
+    }
+    /**
+     * Get the current context window size
+     */
+    getContextWindow() {
+        return this.contextWindow;
+    }
+    /**
+     * Validate if a file is supported for context creation
+     */
+    isFileSupported(filePath) {
+        const ext = path.extname(filePath).toLowerCase();
+        return ext in types_1.LANGUAGE_EXTENSIONS;
+    }
+    /**
+     * Get supported file extensions
+     */
+    getSupportedExtensions() {
+        return Object.keys(types_1.LANGUAGE_EXTENSIONS);
+    }
+    /**
+     * Parse cursor position from text content
+     * Useful when working with editor integrations
+     */
+    static parseCursorFromText(text) {
+        const lines = text.split("\n");
+        let cursor = [0, 0];
+        let cleanText = text;
+        // Find cursor marker
+        for (let row = 0; row < lines.length; row++) {
+            const line = lines[row];
+            const cursorIndex = line.indexOf("<|cursor|>");
+            if (cursorIndex !== -1) {
+                cursor = [row, cursorIndex];
+                // Remove cursor marker from text
+                lines[row] = line.replace("<|cursor|>", "");
+                cleanText = lines.join("\n");
+                break;
+            }
+        }
+        return { text: cleanText, cursor };
+    }
+    /**
+     * Insert cursor marker at specified position
+     */
+    static insertCursorMarker(text, cursor) {
+        const lines = text.split("\n");
+        const [row, col] = cursor;
+        if (row < lines.length) {
+            const line = lines[row];
+            lines[row] = line.slice(0, col) + "<|cursor|>" + line.slice(col);
+        }
+        return lines.join("\n");
+    }
+}
+exports.ContextManager = ContextManager;
+//# sourceMappingURL=context.js.map
