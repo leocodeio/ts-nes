@@ -53,6 +53,7 @@ function processData(data) {
 function validateUser(user) {
   // Position cursor here and press Ctrl+Shift+N
   // Expected: AI should suggest validation logic for user object
+  
 }
 
 /* 
