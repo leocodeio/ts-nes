@@ -70,11 +70,11 @@ export class OllamaAPI {
     // Add request/response interceptors for debugging
     this.client.interceptors.request.use(
       (config) => {
-        console.debug("🚀 Ollama API Request:", {
-          url: config.url,
-          method: config.method,
-          model: this.config.model,
-        });
+        // console.debug("🚀 Ollama API Request:", {
+        //   url: config.url,
+        //   method: config.method,
+        //   model: this.config.model,
+        // });
         return config;
       },
       (error) => {
@@ -85,10 +85,10 @@ export class OllamaAPI {
 
     this.client.interceptors.response.use(
       (response) => {
-        console.debug("✅ Ollama API Response:", {
-          status: response.status,
-          model: response.data?.model,
-        });
+        // console.debug("✅ Ollama API Response:", {
+        //   status: response.status,
+        //   model: response.data
+        // });
         return response;
       },
       (error) => {
@@ -107,6 +107,7 @@ export class OllamaAPI {
   async healthCheck(): Promise<boolean> {
     try {
       // First check if Ollama is running
+      // curl --silent http://localhost:11434/api/version
       await this.client.get("/api/version");
 
       // Then check if our model is available
